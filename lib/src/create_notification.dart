@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:onesignal_flutter/src/utils.dart';
 import 'package:flutter/foundation.dart';
 import 'package:onesignal_flutter/src/notification.dart';
@@ -11,17 +13,13 @@ class OSCreateNotification extends JSONStringRepresentable {
   List<String> playerIds;
 
   /// The notification's content (excluding title)
-  String content;
-
-  /// The language code (ie. "en" for English) for this notification
-  /// defaults to "en" (English)
-  String languageCode;
+  Map<String, String> content;
 
   /// The title/heading for the notification
-  String heading;
+  Map<String, String> heading;
 
   /// The subtitle for the notification (iOS 10+ only)
-  String subtitle;
+  Map<String, String> subtitle;
 
   /// Tells the app to launch in the background (iOS only)
   bool contentAvailable;
@@ -58,6 +56,9 @@ class OSCreateNotification extends JSONStringRepresentable {
   /// The sound to play (Android only)
   String androidSound;
 
+  /// Sets the background color of the notification circle to the left of the notification text
+  Color androidAccentColor;
+
   /// A small icon (Android only)
   /// Can be a drawable resource name or a URL
   String androidSmallIcon;
@@ -68,6 +69,9 @@ class OSCreateNotification extends JSONStringRepresentable {
 
   /// The Android Oreo Notification Category to send the notification under
   String androidChannelId;
+
+  /// Use this if you have client side Android Oreo Channels you have already defined in your app with code
+  String existingAndroidChannelId;
 
   /// can be 'Increase' or 'SetTo'
   OSCreateNotificationBadgeType iosBadgeType;
@@ -95,7 +99,6 @@ class OSCreateNotification extends JSONStringRepresentable {
   OSCreateNotification(
       {@required this.playerIds,
       @required this.content,
-      this.languageCode,
       this.heading,
       this.subtitle,
       this.contentAvailable,
@@ -108,9 +111,11 @@ class OSCreateNotification extends JSONStringRepresentable {
       this.iosCategory,
       this.iosSound,
       this.androidSound,
+	    this.androidAccentColor,
       this.androidSmallIcon,
       this.androidLargeIcon,
       this.androidChannelId,
+	    this.existingAndroidChannelId,
       this.iosBadgeCount,
       this.iosBadgeType,
       this.collapseId,
@@ -128,17 +133,16 @@ class OSCreateNotification extends JSONStringRepresentable {
   }
 
   Map<String, dynamic> mapRepresentation() {
-    if (this.languageCode == null) this.languageCode = "en";
 
     var json = <String, dynamic>{"include_player_ids": this.playerIds};
 
     // add optional parameters to payload if present
     if (this.content != null)
-      json['contents'] = {this.languageCode: this.content};
+      json['contents'] = this.content;
     if (this.heading != null)
-      json['headings'] = {this.languageCode: this.heading};
+      json['headings'] = this.heading;
     if (this.subtitle != null)
-      json['subtitle'] = {this.languageCode: this.subtitle};
+      json['subtitle'] = this.subtitle;
     if (this.contentAvailable != null)
       json['content_available'] = this.contentAvailable;
     if (this.mutableContent != null)
@@ -151,12 +155,15 @@ class OSCreateNotification extends JSONStringRepresentable {
     if (this.iosCategory != null) json['ios_category'] = this.iosCategory;
     if (this.iosSound != null) json['ios_sound'] = this.iosSound;
     if (this.androidSound != null) json['android_sound'] = this.androidSound;
+    if (this.androidAccentColor != null) json['android_accent_color'] = this.androidAccentColor.value.toRadixString(16);
     if (this.androidSmallIcon != null)
       json['small_icon'] = this.androidSmallIcon;
     if (this.androidLargeIcon != null)
       json['large_icon'] = this.androidLargeIcon;
     if (this.androidChannelId != null)
-      json['android_channel_id'] = this.androidChannelId;
+	    json['android_channel_id'] = this.androidChannelId;
+    if (this.existingAndroidChannelId != null)
+	    json['existing_android_channel_id'] = this.existingAndroidChannelId;
     if (this.iosBadgeCount != null) json['ios_badgeCount'] = this.iosBadgeCount;
     if (this.collapseId != null) json['collapse_id'] = this.collapseId;
     if (this.deliveryTimeOfDay != null)
