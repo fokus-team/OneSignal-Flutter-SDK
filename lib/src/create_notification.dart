@@ -70,6 +70,12 @@ class OSCreateNotification extends JSONStringRepresentable {
   /// The Android Oreo Notification Category to send the notification under
   String androidChannelId;
 
+  /// Notifications with the same group will be stacked together
+  String androidGroup;
+
+  /// Summary message to display when 2+ notifications are stacked together
+  Map<String, String> androidGroupMessage;
+
   /// Use this if you have client side Android Oreo Channels you have already defined in your app with code
   String existingAndroidChannelId;
 
@@ -114,6 +120,8 @@ class OSCreateNotification extends JSONStringRepresentable {
 	    this.androidAccentColor,
       this.androidSmallIcon,
       this.androidLargeIcon,
+	    this.androidGroup,
+	    this.androidGroupMessage,
       this.androidChannelId,
 	    this.existingAndroidChannelId,
       this.iosBadgeCount,
@@ -160,6 +168,10 @@ class OSCreateNotification extends JSONStringRepresentable {
       json['small_icon'] = this.androidSmallIcon;
     if (this.androidLargeIcon != null)
       json['large_icon'] = this.androidLargeIcon;
+    if (this.androidGroup != null)
+	    json['android_group'] = this.androidGroup;
+    if (this.androidGroupMessage != null)
+	    json['android_group_message'] = this.androidGroupMessage;
     if (this.androidChannelId != null)
 	    json['android_channel_id'] = this.androidChannelId;
     if (this.existingAndroidChannelId != null)
