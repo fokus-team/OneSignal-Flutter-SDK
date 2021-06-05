@@ -13,8 +13,9 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   String _debugLabelString = "";
-  String _emailAddress;
-  String _externalUserId;
+  String? _emailAddress;
+  String? _smsNumber;
+  String? _externalUserId;
   bool _enableConsentButton = false;
 
   // CHANGE THIS parameter to true if you want to test GDPR privacy consent
@@ -34,29 +35,30 @@ class _MyAppState extends State<MyApp> {
 
     OneSignal.shared.setRequiresUserPrivacyConsent(_requireConsent);
 
-    var settings = {
-      OSiOSSettings.autoPrompt: false,
-      OSiOSSettings.promptBeforeOpeningPushUrl: true
-    };
-
-    OneSignal.shared.setNotificationReceivedHandler((OSNotification notification) {
-      this.setState(() {
-        _debugLabelString =
-            "Received notification: \n${notification.jsonRepresentation().replaceAll("\\n", "\n")}";
-      });
-    });
-
     OneSignal.shared
         .setNotificationOpenedHandler((OSNotificationOpenedResult result) {
-      this.setState(() {
-        _debugLabelString =
-            "Opened notification: \n${result.notification.jsonRepresentation().replaceAll("\\n", "\n")}";
+          print('NOTIFICATION OPENED HANDLER CALLED WITH: ${result}');
+          this.setState(() {
+          _debugLabelString =
+              "Opened notification: \n${result.notification.jsonRepresentation().replaceAll("\\n", "\n")}";
       });
     });
 
     OneSignal.shared
-    .setInAppMessageClickedHandler((OSInAppMessageAction action) {
-      this.setState(() {
+        .setNotificationWillShowInForegroundHandler((OSNotificationReceivedEvent event) {
+           print('FOREGROUND HANDLER CALLED WITH: ${event}');
+           /// Display Notification, send null to not display
+           event.complete(null);
+          
+           this.setState(() {
+           _debugLabelString =
+              "Notification received in foreground notification: \n${event.notification.jsonRepresentation().replaceAll("\\n", "\n")}";
+      });
+    });  
+
+    OneSignal.shared
+        .setInAppMessageClickedHandler((OSInAppMessageAction action) {
+        this.setState(() {
         _debugLabelString =
             "In App Message Clicked: \n${action.jsonRepresentation().replaceAll("\\n", "\n")}";
       });
@@ -76,12 +78,14 @@ class _MyAppState extends State<MyApp> {
       print("EMAIL SUBSCRIPTION STATE CHANGED ${changes.jsonRepresentation()}");
     });
 
+    OneSignal.shared.setSMSSubscriptionObserver(
+        (OSSMSSubscriptionStateChanges changes) {
+      print("SMS SUBSCRIPTION STATE CHANGED ${changes.jsonRepresentation()}");
+    });
+
     // NOTE: Replace with your own app ID from https://www.onesignal.com
     await OneSignal.shared
-        .init("b2f7f966-d8cc-11e4-bed1-df8f05be55ba", iOSSettings: settings);
-
-    OneSignal.shared
-        .setInFocusDisplayType(OSNotificationDisplayType.notification);
+        .setAppId("380dc082-5231-4cc2-ab51-a03da5a0e4c2");
 
     bool requiresConsent = await OneSignal.shared.requiresUserPrivacyConsent();
 
@@ -92,8 +96,13 @@ class _MyAppState extends State<MyApp> {
     // Some examples of how to use In App Messaging public methods with OneSignal SDK
     oneSignalInAppMessagingTriggerExamples();
 
+    OneSignal.shared.disablePush(false);
+
     // Some examples of how to use Outcome Events public methods with OneSignal SDK
     oneSignalOutcomeEventsExamples();
+
+    bool userProvidedPrivacyConsent = await OneSignal.shared.userProvidedPrivacyConsent();
+    print("USER PROVIDED PRIVACY CONSENT: $userProvidedPrivacyConsent");
   }
 
   void _handleGetTags() {
@@ -117,6 +126,14 @@ class _MyAppState extends State<MyApp> {
     }).catchError((error) {
       print("Encountered an error sending tags: $error");
     });
+
+    print("Sending tags array");
+    var sendTags = {'test': 'value'};
+    OneSignal.shared.sendTags(sendTags).then((response) {
+      print("Successfully sent tags with response: $response");
+    }).catchError((error) {
+      print("Encountered an error sending tags: $error");
+    });
   }
 
   void _handlePromptForPushPermission() {
@@ -126,11 +143,12 @@ class _MyAppState extends State<MyApp> {
     });
   }
 
-  void _handleGetPermissionSubscriptionState() {
-    print("Getting permissionSubscriptionState");
-    OneSignal.shared.getPermissionSubscriptionState().then((status) {
+  void _handleGetDeviceState() async {
+    print("Getting DeviceState");
+    OneSignal.shared.getDeviceState().then((deviceState) {
+      print("DeviceState: ${deviceState?.jsonRepresentation()}");
       this.setState(() {
-        _debugLabelString = status.jsonRepresentation();
+        _debugLabelString = deviceState?.jsonRepresentation() ?? "Device state null";
       });
     });
   }
@@ -140,7 +158,7 @@ class _MyAppState extends State<MyApp> {
 
     print("Setting email");
 
-    OneSignal.shared.setEmail(email: _emailAddress).whenComplete(() {
+    OneSignal.shared.setEmail(email: _emailAddress!).whenComplete(() {
       print("Successfully set email");
     }).catchError((error) {
       print("Failed to set email with error: $error");
@@ -149,10 +167,33 @@ class _MyAppState extends State<MyApp> {
 
   void _handleLogoutEmail() {
     print("Logging out of email");
+
     OneSignal.shared.logoutEmail().then((v) {
       print("Successfully logged out of email");
     }).catchError((error) {
       print("Failed to log out of email: $error");
+    });
+  }
+
+    void _handleSetSMSNumber() {
+    if (_smsNumber == null) return;
+
+    print("Setting SMS Number");
+
+    OneSignal.shared.setSMSNumber(smsNumber: _smsNumber!).then((response) {
+      print("Successfully set SMSNumber with response $response");
+    }).catchError((error) {
+      print("Failed to set SMS Number with error: $error");
+    });
+  }
+
+  void _handleLogoutSMSNumber() {
+    print("Logging out of smsNumber");
+
+    OneSignal.shared.logoutSMSNumber().then((response) {
+      print("Successfully logoutEmail with response $response");
+    }).catchError((error) {
+      print("Failed to log out of SMSNumber: $error");
     });
   }
 
@@ -178,11 +219,20 @@ class _MyAppState extends State<MyApp> {
     }).catchError((error) {
       print("Encountered error deleting tag: $error");
     });
+
+    print("Deleting tags array");
+    OneSignal.shared.deleteTags(['test']).then((response) {
+      print("Successfully sent tags with response: $response");
+    }).catchError((error) {
+      print("Encountered an error sending tags: $error");
+    });
   }
 
   void _handleSetExternalUserId() {
     print("Setting external user ID");
-    OneSignal.shared.setExternalUserId(_externalUserId).then((results) {
+    if (_externalUserId == null) return;
+
+    OneSignal.shared.setExternalUserId(_externalUserId!).then((results) {
         if (results == null) return;
 
         this.setState(() {
@@ -202,9 +252,12 @@ class _MyAppState extends State<MyApp> {
   }
 
   void _handleSendNotification() async {
-    var status = await OneSignal.shared.getPermissionSubscriptionState();
+    var deviceState = await OneSignal.shared.getDeviceState();
 
-    var playerId = status.subscriptionStatus.userId;
+    if (deviceState == null || deviceState.userId == null)
+        return;
+
+    var playerId = deviceState.userId!;
 
     var imgUrlString =
         "http://cdn1-www.dogtime.com/assets/uploads/gallery/30-impossibly-cute-puppies/impossibly-cute-puppy-2.jpg";
@@ -228,9 +281,12 @@ class _MyAppState extends State<MyApp> {
   }
 
   void _handleSendSilentNotification() async {
-    var status = await OneSignal.shared.getPermissionSubscriptionState();
+    var deviceState = await OneSignal.shared.getDeviceState();
 
-    var playerId = status.subscriptionStatus.userId;
+    if (deviceState == null || deviceState.userId == null)
+        return;
+
+    var playerId = deviceState.userId!;
 
     var notification = OSCreateNotification.silentNotification(
         playerIds: [playerId], additionalData: {'test': 'value'});
@@ -261,13 +317,11 @@ class _MyAppState extends State<MyApp> {
     OneSignal.shared.removeTriggerForKey("trigger_2");
 
     // Get the value for a trigger by its key
-    Object triggerValue = await OneSignal.shared.getTriggerValueForKey("trigger_3");
-    print("'trigger_3' key trigger value: " + triggerValue);
+    Object? triggerValue = await OneSignal.shared.getTriggerValueForKey("trigger_3");
+    print("'trigger_3' key trigger value: ${triggerValue?.toString()}");
 
     // Create a list and bulk remove triggers based on keys supplied
-    List<String> keys = new List<String>();
-    keys.add("trigger_1");
-    keys.add("trigger_3");
+    List<String> keys = ["trigger_1", "trigger_3"];
     OneSignal.shared.removeTriggersForKeys(keys);
 
     // Toggle pausing (displaying or not) of IAMs
@@ -329,8 +383,8 @@ class _MyAppState extends State<MyApp> {
                   ]),
                   new TableRow(children: [
                     new OneSignalButton(
-                        "Print Permission Subscription State",
-                        _handleGetPermissionSubscriptionState,
+                        "Print Device State",
+                        _handleGetDeviceState,
                         !_enableConsentButton)
                   ]),
                   new TableRow(children: [
@@ -359,6 +413,34 @@ class _MyAppState extends State<MyApp> {
                   ]),
                   new TableRow(children: [
                     new OneSignalButton("Logout Email", _handleLogoutEmail,
+                        !_enableConsentButton)
+                  ]),
+                  new TableRow(children: [
+                    new TextField(
+                      textAlign: TextAlign.center,
+                      decoration: InputDecoration(
+                          hintText: "SMS Number",
+                          labelStyle: TextStyle(
+                            color: Color.fromARGB(255, 212, 86, 83),
+                          )),
+                      onChanged: (text) {
+                        this.setState(() {
+                          _smsNumber = text == "" ? null : text;
+                        });
+                      },
+                    )
+                  ]),
+                  new TableRow(children: [
+                    Container(
+                      height: 8.0,
+                    )
+                  ]),
+                  new TableRow(children: [
+                    new OneSignalButton(
+                        "Set SMS Number", _handleSetSMSNumber, !_enableConsentButton)
+                  ]),
+                  new TableRow(children: [
+                    new OneSignalButton("Logout SMS Number", _handleLogoutSMSNumber,
                         !_enableConsentButton)
                   ]),
                   new TableRow(children: [

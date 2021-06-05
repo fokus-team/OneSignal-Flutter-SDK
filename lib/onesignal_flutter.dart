@@ -21,10 +21,11 @@ export 'src/outcome_event.dart';
 typedef void ReceivedNotificationHandler(OSNotification notification);
 typedef void OpenedNotificationHandler(OSNotificationOpenedResult openedResult);
 typedef void SubscriptionChangedHandler(OSSubscriptionStateChanges changes);
-typedef void EmailSubscriptionChangeHandler(
-  OSEmailSubscriptionStateChanges changes);
+typedef void EmailSubscriptionChangeHandler(OSEmailSubscriptionStateChanges changes);
+typedef void SMSSubscriptionChangeHandler(OSSMSSubscriptionStateChanges changes);
 typedef void PermissionChangeHandler(OSPermissionStateChanges changes);
 typedef void InAppMessageClickedHandler(OSInAppMessageAction action);
+typedef void NotificationWillShowInForegroundHandler(OSNotificationReceivedEvent event);
 
 class OneSignal {
   /// A singleton representing the OneSignal SDK.
@@ -40,12 +41,13 @@ class OneSignal {
   MethodChannel _outcomesChannel = const MethodChannel('OneSignal#outcomes');
 
   // event handlers
-  ReceivedNotificationHandler _onReceivedNotification;
-  OpenedNotificationHandler _onOpenedNotification;
-  SubscriptionChangedHandler _onSubscriptionChangedHandler;
-  EmailSubscriptionChangeHandler _onEmailSubscriptionChangedHandler;
-  PermissionChangeHandler _onPermissionChangedHandler;
-  InAppMessageClickedHandler _onInAppMessageClickedHandler;
+  OpenedNotificationHandler? _onOpenedNotification;
+  SubscriptionChangedHandler? _onSubscriptionChangedHandler;
+  EmailSubscriptionChangeHandler? _onEmailSubscriptionChangedHandler;
+  SMSSubscriptionChangeHandler? _onSMSSubscriptionChangedHandler;
+  PermissionChangeHandler? _onPermissionChangedHandler;
+  InAppMessageClickedHandler? _onInAppMessageClickedHandler;
+  NotificationWillShowInForegroundHandler? _onNotificationWillShowInForegroundHandler;
 
   // constructor method
   OneSignal() {
@@ -54,15 +56,12 @@ class OneSignal {
 
   /// The initializer for OneSignal. Note that this initializer
   /// accepts an iOSSettings object, in Android you can pass null.
-  Future<void> init(String appId,
-      {Map<OSiOSSettings, dynamic> iOSSettings}) async {
+  Future<void> setAppId(String appId) async {
     _onesignalLog(OSLogLevel.verbose,
         "Initializing the OneSignal Flutter SDK ($sdkVersion)");
 
-    var finalSettings = _processSettings(iOSSettings);
-
     await _channel.invokeMethod(
-        'OneSignal#init', {'appId': appId, 'settings': finalSettings});
+        'OneSignal#setAppId', {'appId': appId});
   }
 
   /// Sets the log level for the SDK. The first parameter (logLevel) controls
@@ -71,12 +70,6 @@ class OneSignal {
   Future<void> setLogLevel(OSLogLevel logLevel, OSLogLevel visualLevel) async {
     await _channel.invokeMethod("OneSignal#setLogLevel",
         {'console': logLevel.index, 'visual': visualLevel.index});
-  }
-
-  /// The notification received handler will be called whenever a notification
-  /// is received by the SDK (only applies to OneSignal push notifications)
-  void setNotificationReceivedHandler(ReceivedNotificationHandler handler) {
-    _onReceivedNotification = handler;
   }
 
   /// The notification opened handler is called whenever the user opens a
@@ -107,11 +100,32 @@ class OneSignal {
     _onEmailSubscriptionChangedHandler = handler;
   }
 
+  /// The SMS subscription handler will be called whenever the user's SMS
+  /// subscription changes (OneSignal can also send SMSs in addition to push
+  /// notifications). For example, if you call setSMSNumber() or logoutSMSNumber().
+  void setSMSSubscriptionObserver(SMSSubscriptionChangeHandler handler) {
+    _onSMSSubscriptionChangedHandler = handler;
+  }
+
   /// The in app message clicked handler is called whenever the user clicks a
   /// OneSignal IAM button or image with an action event attacthed to it
   void setInAppMessageClickedHandler(InAppMessageClickedHandler handler) {
     _onInAppMessageClickedHandler = handler;
     _channel.invokeMethod("OneSignal#initInAppMessageClickedHandlerParams");
+  }
+
+  /// The notification foreground handler is called whenever a notification arrives
+  /// and the application is in foreground
+  void setNotificationWillShowInForegroundHandler(NotificationWillShowInForegroundHandler handler) {
+    _onNotificationWillShowInForegroundHandler = handler;
+    _channel.invokeMethod("OneSignal#initNotificationWillShowInForegroundHandlerParams");
+  }
+
+  /// The notification foreground handler is called whenever a notification arrives
+  /// and the application is in foreground
+  void completeNotification(String notificationId, bool shouldDisplay) {
+    _channel.invokeMethod("OneSignal#completeNotification",
+        {'notificationId': notificationId, 'shouldDisplay': shouldDisplay});
   }
 
   /// Allows you to completely disable the SDK until your app calls the
@@ -131,6 +145,14 @@ class OneSignal {
         .invokeMethod("OneSignal#consentGranted", {'granted': granted});
   }
 
+  /// A boolean value indicating if the user provided privacy consent
+  Future<bool> userProvidedPrivacyConsent() async {
+    var val =
+        await _channel.invokeMethod("OneSignal#userProvidedPrivacyConsent");
+
+    return val as bool;
+  }
+
   /// A boolean value indicating if the OneSignal SDK is waiting for the
   /// user's consent before it can initialize (if you set the app to
   /// require the user's consent)
@@ -142,24 +164,13 @@ class OneSignal {
   }
 
   /// in iOS, will prompt the user for permission to send push notifications.
+  //  in Android, it will always return false, since notification permission is by default given
   Future<bool> promptUserForPushNotificationPermission(
       {bool fallbackToSettings = false}) async {
     dynamic result = await _channel.invokeMethod(
         "OneSignal#promptPermission", {'fallback': fallbackToSettings});
 
-    return result as bool;
-  }
-
-  /// The current setting that controls how notifications are displayed.
-  Future<OSNotificationDisplayType> inFocusDisplayType() async {
-    int type = await _channel.invokeMethod("OneSignal#inFocusDisplayType");
-    return OSNotificationDisplayType.values[type];
-  }
-
-  Future<void> setInFocusDisplayType(
-      OSNotificationDisplayType displayType) async {
-    await _channel.invokeMethod(
-        "OneSignal#setInFocusDisplayType", {"displayType": displayType.index});
+    return result as bool? ?? false;
   }
 
   /// Sends a single key/value pair to tags to OneSignal.
@@ -178,7 +189,7 @@ class OneSignal {
   /// waiting for this request to complete.
   Future<Map<String, dynamic>> sendTags(Map<String, dynamic> tags) async {
     Map<dynamic, dynamic> response =
-        await _tagsChannel.invokeMethod("OneSignal#sendTags", tags);
+        await (_tagsChannel.invokeMethod("OneSignal#sendTags", tags));
     return response.cast<String, dynamic>();
   }
 
@@ -189,7 +200,7 @@ class OneSignal {
   /// to finish.
   Future<Map<String, dynamic>> getTags() async {
     Map<dynamic, dynamic> tags =
-        await _tagsChannel.invokeMethod("OneSignal#getTags");
+        await (_tagsChannel.invokeMethod("OneSignal#getTags"));
     return tags.cast<String, dynamic>();
   }
 
@@ -206,27 +217,27 @@ class OneSignal {
   /// array of keys.
   Future<Map<String, dynamic>> deleteTags(List<String> keys) async {
     Map<dynamic, dynamic> response =
-        await _tagsChannel.invokeMethod("OneSignal#deleteTags", keys);
+        await (_tagsChannel.invokeMethod("OneSignal#deleteTags", keys));
     return response.cast<String, dynamic>();
   }
 
-  /// Returns an `OSPermissionSubscriptionState` object, which contains three properties:
-  ///   1. `subscriptionStatus` : Describes the current user's OneSignal Push notification subscription
-  ///   2. `emailSubscriptionStatus` : The current user's email subscription state
-  ///   3. `permissionStatus` : The current user's permission, ie. have they answered the iOS permission prompt
-  Future<OSPermissionSubscriptionState> getPermissionSubscriptionState() async {
+  /// Returns an `OSDeviceState` object, which contains the current device state
+  Future<OSDeviceState?> getDeviceState() async {
     var json =
-        await _channel.invokeMethod("OneSignal#getPermissionSubscriptionState");
+        await _channel.invokeMethod("OneSignal#getDeviceState");
 
-    return OSPermissionSubscriptionState(json.cast<String, dynamic>());
+    if ((json.cast<String, dynamic>()).isEmpty)
+      return null;
+
+    return OSDeviceState(json.cast<String, dynamic>());
   }
 
   /// Allows you to manually disable or enable push notifications for this user.
   /// Note: This method does not change the user's system (iOS) push notification
   /// permission status. If the user disabled (or never allowed) your application
-  /// to send push notifications, calling setSubscription(true) will not change that.
-  Future<void> setSubscription(bool enable) async {
-    return await _channel.invokeMethod("OneSignal#setSubscription", enable);
+  /// to send push notifications, calling disablePush(false) will not change that.
+  Future<void> disablePush(bool disable) async {
+    return await _channel.invokeMethod("OneSignal#disablePush", disable);
   }
 
   /// Allows you to post a notification to the current user (or a different user
@@ -234,15 +245,26 @@ class OneSignal {
   Future<Map<String, dynamic>> postNotificationWithJson(
       Map<String, dynamic> json) async {
     Map<dynamic, dynamic> response =
-        await _channel.invokeMethod("OneSignal#postNotification", json);
+        await (_channel.invokeMethod("OneSignal#postNotification", json));
     return response.cast<String, dynamic>();
   }
 
   Future<Map<String, dynamic>> postNotification(
       OSCreateNotification notification) async {
-    Map<dynamic, dynamic> response = await _channel.invokeMethod(
-        "OneSignal#postNotification", notification.mapRepresentation());
+    Map<dynamic, dynamic> response = await (_channel.invokeMethod(
+        "OneSignal#postNotification", notification.mapRepresentation()));
     return response.cast<String, dynamic>();
+  }
+
+  /// Allows you to manually remove all OneSignal notifications from the Notification Shade
+  Future<void> clearOneSignalNotifications() async {
+    return await _channel.invokeMethod("OneSignal#clearOneSignalNotifications");
+  }
+
+  /// Allows you to manually cancel a single OneSignal notification based on its Android notification integer ID
+  void removeNotification(int notificationId) {
+    _channel.invokeMethod("OneSignal#removeNotification",
+        {'notificationId': notificationId});
   }
 
   /// Allows you to prompt the user for permission to use location services
@@ -261,7 +283,7 @@ class OneSignal {
   /// Identity Verification. The email auth hash is a hash of your app's API key and the
   /// user ID. We recommend you generate this token from your backend server, do NOT
   /// store your API key in your app as this is highly insecure.
-  Future<void> setEmail({String email, String emailAuthHashToken}) async {
+  Future<void> setEmail({required String email, String? emailAuthHashToken}) async {
     return await _channel.invokeMethod("OneSignal#setEmail",
         {'email': email, 'emailAuthHashToken': emailAuthHashToken});
   }
@@ -272,19 +294,38 @@ class OneSignal {
     return await _channel.invokeMethod("OneSignal#logoutEmail");
   }
 
+  /// Sets the user's SMS number so you can send them SMSs through the OneSignal dashboard
+  /// and API. The `smsAuthHashToken` is optional (but highly recommended) as part of
+  /// Identity Verification. The SMS auth hash is a hash of your app's API key and the
+  /// user ID. We recommend you generate this token from your backend server, do NOT
+  /// store your API key in your app as this is highly insecure.
+  Future<Map<String, dynamic>> setSMSNumber({required String smsNumber, String? smsAuthHashToken}) async {
+    Map<dynamic, dynamic> results =
+        await _channel.invokeMethod("OneSignal#setSMSNumber", {'smsNumber': smsNumber, 'smsAuthHashToken': smsAuthHashToken});
+    return results.cast<String, dynamic>();
+  }
+
+  /// Dissociates the user's SMS number from OneSignal, akin to turning off push notifications
+  /// for SMS number.
+  Future<Map<String, dynamic>> logoutSMSNumber() async {
+    Map<dynamic, dynamic> results =
+        await _channel.invokeMethod("OneSignal#logoutSMSNumber");
+    return results.cast<String, dynamic>();
+  }
+
   /// OneSignal allows you to set a custom ID for your users. This makes it so that
   /// if your app has its own user ID's, you can use your own custom user ID's with
   /// our API instead of having to save their OneSignal user ID's.
-  Future<Map<String, dynamic>> setExternalUserId(String externalId) async {
+  Future<Map<String, dynamic>> setExternalUserId(String externalId, [String? authHashToken]) async {
     Map<dynamic, dynamic> results =
-        await _channel.invokeMethod("OneSignal#setExternalUserId", {'externalUserId' : externalId});;
+        await (_channel.invokeMethod("OneSignal#setExternalUserId", {'externalUserId' : externalId, 'authHashToken' : authHashToken}));
     return results.cast<String, dynamic>();
   }
 
   /// Removes the external user ID that was set for the current user.
   Future<Map<String, dynamic>> removeExternalUserId() async {
     Map<dynamic, dynamic> results =
-        await _channel.invokeMethod("OneSignal#removeExternalUserId");
+        await (_channel.invokeMethod("OneSignal#removeExternalUserId"));
     return results.cast<String, dynamic>();
   }
 
@@ -313,7 +354,7 @@ class OneSignal {
   }
 
   /// Get the trigger value associated with the key provided
-  Future<Object> getTriggerValueForKey(String key) async {
+  Future<Object?> getTriggerValueForKey(String key) async {
     return await _inAppMessagesChannel.invokeMethod("OneSignal#getTriggerValueForKey", key);
   }
 
@@ -357,31 +398,34 @@ class OneSignal {
 
   // Private function that gets called by ObjC/Java
   Future<Null> _handleMethod(MethodCall call) async {
-    if (call.method == 'OneSignal#handleReceivedNotification' &&
-        this._onReceivedNotification != null) {
-      this._onReceivedNotification(
-          OSNotification(call.arguments.cast<String, dynamic>()));
-    } else if (call.method == 'OneSignal#handleOpenedNotification' &&
+    if (call.method == 'OneSignal#handleOpenedNotification' &&
         this._onOpenedNotification != null) {
-      this._onOpenedNotification(
+      this._onOpenedNotification!(
           OSNotificationOpenedResult(call.arguments.cast<String, dynamic>()));
     } else if (call.method == 'OneSignal#subscriptionChanged' &&
         this._onSubscriptionChangedHandler != null) {
-      this._onSubscriptionChangedHandler(
+      this._onSubscriptionChangedHandler!(
           OSSubscriptionStateChanges(call.arguments.cast<String, dynamic>()));
     } else if (call.method == 'OneSignal#permissionChanged' &&
         this._onPermissionChangedHandler != null) {
-      this._onPermissionChangedHandler(
-          OSPermissionStateChanges(call.arguments.cast<String, dynamic>()));
+      this._onPermissionChangedHandler!(
+           OSPermissionStateChanges(call.arguments.cast<String, dynamic>()));
     } else if (call.method == 'OneSignal#emailSubscriptionChanged' &&
         this._onEmailSubscriptionChangedHandler != null) {
-      this._onEmailSubscriptionChangedHandler(
-          OSEmailSubscriptionStateChanges(
-              call.arguments.cast<String, dynamic>()));
+      this._onEmailSubscriptionChangedHandler!(
+          OSEmailSubscriptionStateChanges(call.arguments.cast<String, dynamic>()));
+    } else if (call.method == 'OneSignal#smsSubscriptionChanged' &&
+        this._onSMSSubscriptionChangedHandler != null) {
+      this._onSMSSubscriptionChangedHandler!(
+          OSSMSSubscriptionStateChanges(call.arguments.cast<String, dynamic>()));
     } else if (call.method == 'OneSignal#handleClickedInAppMessage' &&
         this._onInAppMessageClickedHandler != null) {
-      this._onInAppMessageClickedHandler(
+      this._onInAppMessageClickedHandler!(
           OSInAppMessageAction(call.arguments.cast<String, dynamic>()));
+    } else if (call.method == 'OneSignal#handleNotificationWillShowInForeground' &&
+        this._onNotificationWillShowInForegroundHandler != null) {
+      this._onNotificationWillShowInForegroundHandler!(
+          OSNotificationReceivedEvent(call.arguments.cast<String, dynamic>()));
     }
     return null;
   }
