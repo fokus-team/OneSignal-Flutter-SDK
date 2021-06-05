@@ -169,7 +169,7 @@ class OSCreateNotification extends JSONStringRepresentable {
     if (this.iosCategory != null) json['ios_category'] = this.iosCategory;
     if (this.iosSound != null) json['ios_sound'] = this.iosSound;
     if (this.androidSound != null) json['android_sound'] = this.androidSound;
-    if (this.androidAccentColor != null) json['android_accent_color'] = this.androidAccentColor.value.toRadixString(16);
+    if (this.androidAccentColor != null) json['android_accent_color'] = this.androidAccentColor!.value.toRadixString(16);
     if (this.androidSmallIcon != null)
       json['small_icon'] = this.androidSmallIcon;
     if (this.androidLargeIcon != null)
